@@ -22,7 +22,7 @@ bench set-redis-socketio-host redis://redis:6379
 sed -i '/redis/d' ./Procfile
 sed -i '/watch/d' ./Procfile
 
-bench get-app crm --branch main
+bench get-app crm git@github.com:Alocaspace/crm.git --branch main
 
 bench new-site crm.localhost \
     --force \
