@@ -1,8 +1,9 @@
-#!/bin/bash
-set -e
+#!bin/bash
 
 if [ -d "/home/frappe/frappe-bench/apps/frappe" ]; then
     echo "Bench already exists, skipping init"
+    cd frappe-bench
+    bench start
 else
     echo "Creating new bench..."
 fi
@@ -36,24 +37,4 @@ bench --site crm.localhost set-config server_script_enabled 1
 bench --site crm.localhost clear-cache
 bench use crm.localhost
 
-echo "Setting up production environment..."
-
-# --- Install system dependencies ---
-echo "Installing Nginx and Supervisor..."
-apt-get update -qq
-apt-get install -y nginx supervisor
-
-# --- Setup production mode ---
-echo "Setting up Frappe production environment..."
-sudo bench setup production frappe --yes
-
-# --- Ensure supervisor and nginx services are running ---
-sudo service supervisor start
-sudo service nginx start
-
-# --- Restart all managed processes ---
-sudo supervisorctl reread
-sudo supervisorctl update
-sudo supervisorctl restart all
-
-echo "✅ Frappe is running in production mode."
+bench start
