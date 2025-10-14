@@ -45,15 +45,15 @@ apt-get install -y nginx supervisor
 
 # --- Setup production mode ---
 echo "Setting up Frappe production environment..."
-bench setup production frappe --yes
+sudo bench setup production frappe --yes
 
 # --- Ensure supervisor and nginx services are running ---
-service supervisor start
-service nginx start
+sudo service supervisor start
+sudo service nginx start
 
 # --- Restart all managed processes ---
-supervisorctl reread
-supervisorctl update
-supervisorctl restart all
+sudo supervisorctl reread
+sudo supervisorctl update
+sudo supervisorctl restart all
 
 echo "✅ Frappe is running in production mode."
