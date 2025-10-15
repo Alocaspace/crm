@@ -17,12 +17,16 @@ services:
 
   frappe:
     image: frappe/bench:latest
-    command: bash /workspace/init.sh
+    user: root
+    working_dir: /home/frappe
+    command: bash /workspace/init-production.sh
     environment:
       - SHELL=/bin/bash
-    working_dir: /home/frappe
     volumes:
       - .:/workspace
+    depends_on:
+      - mariadb
+      - redis
 
 volumes:
   mariadb-data:
