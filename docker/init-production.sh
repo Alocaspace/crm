@@ -52,9 +52,12 @@ echo "📦 Installing Supervisor..."
 apt update && apt install -y supervisor
 
 echo "⚙️ Generating Supervisor config..."
-bench setup supervisor
 
+bench setup supervisor
+# Replace 127.0.0.1 with 0.0.0.0 so Gunicorn listens on all interfaces
+sed -i 's/127\.0\.0\.1:8000/0.0.0.0:8000/g' /home/frappe/frappe-bench/config/supervisor.conf
 cp /home/frappe/frappe-bench/config/supervisor.conf /etc/supervisor/conf.d/frappe-bench.conf
+
 
 # Remove redis programs and groups (external redis is used)
 sed -i '/\[program:frappe-bench-redis-/,/^$/d' /etc/supervisor/conf.d/frappe-bench.conf || true
