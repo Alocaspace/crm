@@ -44,6 +44,8 @@ fi
 bench --site crm.localhost set-config developer_mode 0
 bench --site crm.localhost set-config mute_emails 1
 bench --site crm.localhost set-config server_script_enabled 1
+bench --site crm.localhost set-config host_name "https://crm.duiverse.com"
+bench --site crm.localhost set-config allow_hosts '["crm.duiverse.com", "crm.localhost", "localhost", "form_crm_frappe"]'
 bench --site crm.localhost clear-cache
 bench use crm.localhost
 
