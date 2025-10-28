@@ -6,7 +6,9 @@ pip install frappe-bench
 
 cd /home/frappe
 
-# --- Initialize or reuse bench ---
+# ==============================================================
+# 🚀 Initialize or reuse Bench
+# ==============================================================
 if [ -d "frappe-bench" ]; then
     echo "⚙️ Bench already exists, skipping init."
 else
@@ -16,25 +18,31 @@ fi
 
 cd frappe-bench
 
-# --- Configure DB and Redis hosts for container networking ---
+# ==============================================================
+# 🔌 Connect to external MariaDB & Redis
+# ==============================================================
 bench set-mariadb-host mariadb
 bench set-redis-cache-host redis://redis:6379
 bench set-redis-queue-host redis://redis:6379
 bench set-redis-socketio-host redis://redis:6379
 
-# --- Clean out unnecessary dev processes ---
+# Remove dev processes from Procfile
 sed -i '/redis/d' ./Procfile || true
 sed -i '/watch/d' ./Procfile || true
 
-# --- Get app if missing ---
+# ==============================================================
+# 📦 Get your app
+# ==============================================================
 if [ ! -d "apps/crm" ]; then
-    echo "📦 Cloning CRM app..."
+    echo "📥 Fetching CRM app..."
     bench get-app crm https://github.com/Alocaspace/crm.git --branch main
 fi
 
-# --- Create site if missing ---
+# ==============================================================
+# 🌐 Create site if missing
+# ==============================================================
 if [ ! -d "sites/crm.duiverse.com" ]; then
-    echo "🌐 Creating new site crm.duiverse.com..."
+    echo "🌍 Creating site crm.duiverse.com..."
     bench new-site crm.duiverse.com \
         --force \
         --mariadb-root-password 123 \
@@ -43,7 +51,9 @@ if [ ! -d "sites/crm.duiverse.com" ]; then
     bench --site crm.duiverse.com install-app crm
 fi
 
-# --- Basic site configs ---
+# ==============================================================
+# ⚙️ Base Config
+# ==============================================================
 bench --site crm.duiverse.com set-config developer_mode 0
 bench --site crm.duiverse.com set-config mute_emails 1
 bench --site crm.duiverse.com set-config server_script_enabled 1
@@ -53,9 +63,9 @@ bench --site crm.duiverse.com clear-cache
 bench use crm.duiverse.com
 
 # ==============================================================
-# 🧠 Prevent OOM issues during asset build (Add Swap)
+# 🧠 Memory Protection – Add Swap (2 GB)
 # ==============================================================
-echo "🧠 Setting up temporary 2 GB swap to prevent OOM during yarn build..."
+echo "🧠 Adding temporary 2 GB swap to avoid memory crashes..."
 if [ ! -f /swapfile ]; then
     fallocate -l 2G /swapfile || dd if=/dev/zero of=/swapfile bs=1M count=2048
     chmod 600 /swapfile
@@ -65,48 +75,54 @@ fi
 free -h
 
 # ==============================================================
-# 🎨 Build and link assets for production
+# 🎨 Build & Link Assets
 # ==============================================================
-
-echo "🎨 Building Frappe assets for production..."
+echo "🎨 Building production assets..."
 set +e
 bench build --production
 if [ $? -ne 0 ]; then
-    echo "⚠️ Production build failed (likely memory). Retrying with normal build..."
+    echo "⚠️ Production build failed (OOM or error). Retrying normal build..."
     bench build
 fi
 set -e
 
-echo "🧩 Collecting static assets..."
-bench setup assets
-bench clear-cache
+echo "🧩 Ensuring /sites/assets folder is populated..."
+mkdir -p /home/frappe/frappe-bench/sites/assets
+bench setup assets || true
+bench clear-cache || true
+
+echo "📦 Copying app assets to /sites/assets..."
+cp -r /home/frappe/frappe-bench/apps/frappe/frappe/public/* /home/frappe/frappe-bench/sites/assets/ || true
+if [ -d "/home/frappe/frappe-bench/apps/crm/crm/public" ]; then
+  cp -r /home/frappe/frappe-bench/apps/crm/crm/public/* /home/frappe/frappe-bench/sites/assets/ || true
+fi
+
+chown -R frappe:frappe /home/frappe/frappe-bench/sites
+chmod -R 755 /home/frappe/frappe-bench/sites/assets
+
+echo "✅ Assets successfully built and linked!"
 
 # ==============================================================
-# 🌐 Install and configure Supervisor + Nginx
+# 🌐 Setup Nginx + Supervisor
 # ==============================================================
+echo "📦 Installing Nginx and Supervisor..."
+apt update && apt install -y nginx supervisor
 
-echo "📦 Installing Supervisor and Nginx..."
-apt update && apt install -y supervisor nginx
-
-echo "⚙️ Setting up Supervisor..."
+echo "⚙️ Configuring Supervisor..."
 bench setup supervisor
-
-# Replace localhost binding
 sed -i 's/127\.0\.0\.1:8000/0.0.0.0:8000/g' /home/frappe/frappe-bench/config/supervisor.conf
 cp /home/frappe/frappe-bench/config/supervisor.conf /etc/supervisor/conf.d/frappe-bench.conf
 
-# Remove internal redis definitions
+# Remove redis workers (external redis used)
 sed -i '/\[program:frappe-bench-redis-/,/^$/d' /etc/supervisor/conf.d/frappe-bench.conf || true
 sed -i '/\[group:frappe-bench-redis\]/,/^$/d' /etc/supervisor/conf.d/frappe-bench.conf || true
 
-# --- Generate Nginx config ---
-echo "🌐 Setting up Nginx..."
+echo "🌐 Configuring Nginx..."
 bench setup nginx
 cp /home/frappe/frappe-bench/config/nginx.conf /etc/nginx/conf.d/frappe-bench.conf
 
-# Ensure correct asset path and permissions
-chown -R frappe:frappe /home/frappe/frappe-bench
-chmod -R 755 /home/frappe/frappe-bench/sites/assets
+# Fix asset directory path for Nginx
+sed -i 's|root\s*/home/frappe/frappe-bench/sites;|root /home/frappe/frappe-bench/sites;|' /etc/nginx/conf.d/frappe-bench.conf
 
 # Restart services
 service nginx restart || true
@@ -114,8 +130,10 @@ supervisorctl reread || true
 supervisorctl update || true
 supervisorctl restart all || true
 
-echo "✅ Frappe production environment is ready (Nginx + Supervisor running)."
+echo "✅ Frappe production (Supervisor + Nginx + Assets) ready."
 
-# --- Keep container alive with Supervisor ---
-echo "🚀 Starting Supervisor (keeps container alive)..."
+# ==============================================================
+# 🚀 Keep Container Running
+# ==============================================================
+echo "🚀 Starting Supervisor in foreground..."
 exec /usr/bin/supervisord -n -c /etc/supervisor/supervisord.conf

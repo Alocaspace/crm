@@ -27,6 +27,10 @@ services:
     depends_on:
       - mariadb
       - redis
+    deploy:
+      resources:
+        limits:
+          memory: 4g
 
 volumes:
   mariadb-data:
