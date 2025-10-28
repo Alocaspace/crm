@@ -62,17 +62,6 @@ bench --site crm.duiverse.com set-config allow_hosts '["crm.duiverse.com", "loca
 bench --site crm.duiverse.com clear-cache
 bench use crm.duiverse.com
 
-# ==============================================================
-# 🧠 Memory Protection – Add Swap (2 GB)
-# ==============================================================
-echo "🧠 Adding temporary 2 GB swap to avoid memory crashes..."
-if [ ! -f /swapfile ]; then
-    fallocate -l 2G /swapfile || dd if=/dev/zero of=/swapfile bs=1M count=2048
-    chmod 600 /swapfile
-    mkswap /swapfile
-    swapon /swapfile
-fi
-free -h
 
 # ==============================================================
 # 🎨 Build & Link Assets
