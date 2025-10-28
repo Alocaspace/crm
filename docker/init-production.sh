@@ -31,23 +31,23 @@ if [ ! -d "apps/crm" ]; then
 fi
 
 # Create site if missing
-if [ ! -d "sites/crm.localhost" ]; then
-    bench new-site crm.localhost \
+if [ ! -d "sites/crm.duiverse.com" ]; then
+    bench new-site crm.duiverse.com \
         --force \
         --mariadb-root-password 123 \
         --admin-password admin \
         --no-mariadb-socket
-    bench --site crm.localhost install-app crm
+    bench --site crm.duiverse.com install-app crm
 fi
 
 # Basic configs
-bench --site crm.localhost set-config developer_mode 0
-bench --site crm.localhost set-config mute_emails 1
-bench --site crm.localhost set-config server_script_enabled 1
-bench --site crm.localhost set-config host_name "https://crm.duiverse.com"
-bench --site crm.localhost set-config allow_hosts '["crm.duiverse.com", "crm.localhost", "localhost", "form_crm_frappe"]'
-bench --site crm.localhost clear-cache
-bench use crm.localhost
+bench --site crm.duiverse.com set-config developer_mode 0
+bench --site crm.duiverse.com set-config mute_emails 1
+bench --site crm.duiverse.com set-config server_script_enabled 1
+bench --site crm.duiverse.com set-config host_name "https://crm.duiverse.com"
+bench --site crm.duiverse.com set-config allow_hosts '["crm.duiverse.com", "localhost", "form_crm_frappe"]'
+bench --site crm.duiverse.com clear-cache
+bench use crm.duiverse.com
 
 # --- Install Supervisor and Nginx ---
 echo "📦 Installing Supervisor and Nginx..."
