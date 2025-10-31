@@ -57,22 +57,19 @@ fi
 bench --site crm.duiverse.com set-config developer_mode 0
 bench --site crm.duiverse.com set-config mute_emails 1
 bench --site crm.duiverse.com set-config server_script_enabled 1
+# Use http for local enviroment
+#bench --site crm.duiverse.com set-config host_name "http://crm.duiverse.com"
 bench --site crm.duiverse.com set-config host_name "https://crm.duiverse.com"
-bench --site crm.duiverse.com set-config allow_hosts '["crm.duiverse.com", "localhost", "form_crm_frappe"]'
+bench --site crm.duiverse.com set-config allow_hosts '["crm.duiverse.com", "localhost", "127.0.0.1"]'
 bench --site crm.duiverse.com clear-cache
 bench use crm.duiverse.com
-
 
 # ==============================================================
 # 🎨 Build & Link Assets
 # ==============================================================
 echo "🎨 Building production assets..."
 set +e
-bench build --production
-if [ $? -ne 0 ]; then
-    echo "⚠️ Production build failed (OOM or error). Retrying normal build..."
-    bench build
-fi
+bench build --production || bench build
 set -e
 
 echo "🧩 Ensuring /sites/assets folder is populated..."
@@ -80,16 +77,8 @@ mkdir -p /home/frappe/frappe-bench/sites/assets
 bench setup assets || true
 bench clear-cache || true
 
-echo "📦 Copying app assets to /sites/assets..."
-cp -r /home/frappe/frappe-bench/apps/frappe/frappe/public/* /home/frappe/frappe-bench/sites/assets/ || true
-if [ -d "/home/frappe/frappe-bench/apps/crm/crm/public" ]; then
-  cp -r /home/frappe/frappe-bench/apps/crm/crm/public/* /home/frappe/frappe-bench/sites/assets/ || true
-fi
-
 chown -R frappe:frappe /home/frappe/frappe-bench/sites
 chmod -R 755 /home/frappe/frappe-bench/sites/assets
-
-echo "✅ Assets successfully built and linked!"
 
 # ==============================================================
 # 🌐 Setup Nginx + Supervisor
@@ -97,29 +86,76 @@ echo "✅ Assets successfully built and linked!"
 echo "📦 Installing Nginx and Supervisor..."
 apt update && apt install -y nginx supervisor
 
+# Supervisor setup
 echo "⚙️ Configuring Supervisor..."
 bench setup supervisor
-sed -i 's/127\.0\.0\.1:8000/0.0.0.0:8000/g' /home/frappe/frappe-bench/config/supervisor.conf
+
+# Change Gunicorn port to 8001 so Nginx can front it
+sed -i 's/127\.0\.0\.1:8000/127.0.0.1:8001/g' /home/frappe/frappe-bench/config/supervisor.conf
+
+# Make sure SocketIO runs on 9000 and listens on all interfaces
+sed -i 's/node socketio.js$/node socketio.js --port 9000/' /home/frappe/frappe-bench/config/supervisor.conf
+
 cp /home/frappe/frappe-bench/config/supervisor.conf /etc/supervisor/conf.d/frappe-bench.conf
 
 # Remove redis workers (external redis used)
 sed -i '/\[program:frappe-bench-redis-/,/^$/d' /etc/supervisor/conf.d/frappe-bench.conf || true
 sed -i '/\[group:frappe-bench-redis\]/,/^$/d' /etc/supervisor/conf.d/frappe-bench.conf || true
 
-echo "🌐 Configuring Nginx..."
+# ==============================================================
+# 🧩 Setup Nginx
+# ==============================================================
+echo "🌐 Generating and patching Nginx config..."
 bench setup nginx
-cp /home/frappe/frappe-bench/config/nginx.conf /etc/nginx/conf.d/frappe-bench.conf
 
-# Fix asset directory path for Nginx
-sed -i 's|root\s*/home/frappe/frappe-bench/sites;|root /home/frappe/frappe-bench/sites;|' /etc/nginx/conf.d/frappe-bench.conf
+NGINX_CONF="/home/frappe/frappe-bench/config/nginx.conf"
 
-# Restart services
-service nginx restart || true
-supervisorctl reread || true
-supervisorctl update || true
-supervisorctl restart all || true
+# Force Nginx to listen on port 8000
+sed -i 's/listen 80;/listen 8000;/' "$NGINX_CONF"
 
-echo "✅ Frappe production (Supervisor + Nginx + Assets) ready."
+# Make sure it proxies Gunicorn correctly (running on 8001)
+sed -i 's|proxy_pass http://127.0.0.1:8000;|proxy_pass http://127.0.0.1:8001;|' "$NGINX_CONF"
+
+# Ensure static assets are served directly by Nginx
+if ! grep -q "alias /home/frappe/frappe-bench/sites/assets;" "$NGINX_CONF"; then
+    sed -i '/location \/assets {/a\    alias /home/frappe/frappe-bench/sites/assets;' "$NGINX_CONF"
+fi
+
+# Copy config to Nginx conf.d
+cp "$NGINX_CONF" /etc/nginx/conf.d/frappe-bench.conf
+
+# --------------------------------------------------------------
+# ✅ Fix for missing "main" log format
+# --------------------------------------------------------------
+if ! grep -q "log_format main" /etc/nginx/nginx.conf; then
+    echo "🧩 Adding missing 'main' log format to nginx.conf..."
+    sed -i '/http {/a\    log_format main '\''$remote_addr - $remote_user [$time_local] "$request" '\''\n                      '\''$status $body_bytes_sent "$http_referer" '\''\n                      '\''"$http_user_agent" "$http_x_forwarded_for"'\'';' /etc/nginx/nginx.conf
+fi
+
+if grep -q "main" /etc/nginx/conf.d/frappe-bench.conf; then
+    echo "🧹 Verifying 'main' log format references..."
+    sed -i 's/ main;$/;/' /etc/nginx/conf.d/frappe-bench.conf
+fi
+
+# 🔧 Ensure upstream uses correct Gunicorn port (8001)
+if grep -q "127.0.0.1:8000" /etc/nginx/conf.d/frappe-bench.conf; then
+    echo "🔄 Fixing Nginx upstream to point to port 8001..."
+    sed -i 's/127\.0\.0\.1:8000/127.0.0.1:8001/g' /etc/nginx/conf.d/frappe-bench.conf
+fi
+
+# ==============================================================
+# 🚀 Start Services
+# ==============================================================
+echo "🔁 Restarting services..."
+
+mkdir -p /var/run/supervisor
+chown -R root:root /var/run/supervisor
+
+nginx -t && service nginx restart
+
+echo "✅ Frappe production (Nginx + Supervisor + SocketIO) ready."
+echo "🌍 App: http://localhost:8000"
+echo "⚡ SocketIO: ws://localhost:9000"
 
 # ==============================================================
 # 🚀 Keep Container Running
